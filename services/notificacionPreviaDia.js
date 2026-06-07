@@ -17,6 +17,38 @@ import { enviarRecordatorio_1hora } from './notificacionWhatsApp.js';
  */
 
 const DIRECCION_CLINICA = process.env.DIRECCION_EMPRESA;
+const TIMEZONE_CL = 'America/Santiago';
+
+function obtenerFechaHoraActualChile() {
+    const partes = new Intl.DateTimeFormat('en-CA', {
+        timeZone: TIMEZONE_CL,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hourCycle: 'h23'
+    }).formatToParts(new Date());
+    const valor = Object.fromEntries(partes.map(({ type, value }) => [type, value]));
+
+    return `${valor.year}-${valor.month}-${valor.day} ${valor.hour}:${valor.minute}:${valor.second}`;
+}
+
+function formatearFechaCalendario(fecha) {
+    const coincidencia = String(fecha || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!coincidencia) return String(fecha || '');
+
+    const [, year, month, day] = coincidencia;
+    const fechaUTC = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+    return fechaUTC.toLocaleDateString('es-CL', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        timeZone: 'UTC'
+    });
+}
 
 /**
  * Envía el correo de recordatorio usando Brevo API
@@ -220,6 +252,7 @@ async function marcarRecordatorioWhatsAppEnviado(id_reserva, tipoRecordatorio) {
 async function obtenerReservasParaRecordatorio() {
     try {
         const conexion = DataBase.getInstance();
+        const ahoraChile = obtenerFechaHoraActualChile();
 
         // Obtener reservas activas que están entre 0 y 13 horas en el futuro
         const query = `
@@ -237,15 +270,15 @@ async function obtenerReservasParaRecordatorio() {
         COALESCE(wspRecordatorio12h, 0) as wspRecordatorio12h,
         COALESCE(wspRecordatorio6h, 0) as wspRecordatorio6h,
         COALESCE(wspRecordatorio1h, 0) as wspRecordatorio1h,
-        TIMESTAMPDIFF(MINUTE, NOW(), TIMESTAMP(fechaInicio, horaInicio)) as minutos_restantes
+        TIMESTAMPDIFF(MINUTE, ?, TIMESTAMP(fechaInicio, horaInicio)) as minutos_restantes
       FROM reservaPacientes
       WHERE estadoReserva IN ('reservada', 'CONFIRMADA')
         AND estadoPeticion <> 0
-        AND TIMESTAMP(fechaInicio, horaInicio) > NOW()
-        AND TIMESTAMP(fechaInicio, horaInicio) <= DATE_ADD(NOW(), INTERVAL 13 HOUR)
+        AND TIMESTAMP(fechaInicio, horaInicio) > ?
+        AND TIMESTAMP(fechaInicio, horaInicio) <= DATE_ADD(?, INTERVAL 13 HOUR)
     `;
 
-        const reservas = await conexion.ejecutarQuery(query);
+        const reservas = await conexion.ejecutarQuery(query, [ahoraChile, ahoraChile, ahoraChile]);
         return Array.isArray(reservas) ? reservas : [];
     } catch (error) {
         console.error("[RECORDATORIO] Error al obtener reservas:", error.message);
@@ -257,9 +290,7 @@ async function obtenerReservasParaRecordatorio() {
  * Formatea la fecha para mostrar en el correo
  */
 function formatearFecha(fechaStr) {
-    const fecha = new Date(fechaStr);
-    const opciones = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
-    return fecha.toLocaleDateString('es-CL', opciones);
+    return formatearFechaCalendario(fechaStr);
 }
 
 /**
@@ -273,7 +304,7 @@ function formatearFecha(fechaStr) {
 export async function ejecutarRecordatoriosAutomaticos() {
     console.log("[RECORDATORIO] ========================================");
     console.log("[RECORDATORIO] Iniciando proceso de recordatorios...");
-    console.log("[RECORDATORIO] Fecha/Hora actual:", new Date().toLocaleString('es-CL'));
+    console.log("[RECORDATORIO] Fecha/Hora actual:", obtenerFechaHoraActualChile());
 
     try {
         const reservas = await obtenerReservasParaRecordatorio();

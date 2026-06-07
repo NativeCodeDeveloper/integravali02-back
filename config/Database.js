@@ -11,6 +11,9 @@ class DataBase {
             password: process.env.DB_PASS,
             database: process.env.DB_DATABASE,
             port: Number(process.env.DB_PORT || 3306), // ahora se incluye el puerto
+            // DATE y DATETIME representan valores locales del negocio. Evita que
+            // mysql2 los convierta a Date y los serialice posteriormente como UTC.
+            dateStrings: ['DATE', 'DATETIME'],
             waitForConnections: true,
             connectionLimit: Number(process.env.DB_POOL_LIMIT || 10),
             queueLimit: 0
